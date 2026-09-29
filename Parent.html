@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11100f">
+  <title>Calix Meritorum — Parent Control</title>
+  <style>
+    :root { color-scheme: dark; font-family: Georgia, "Times New Roman", serif; background: #11100f; color: #e8ddc3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; min-height: 100dvh; background: radial-gradient(ellipse at 50% 0%, #29241d 0%, #171614 42%, #0e0e0e 100%); }
+    main { width: min(100% - 32px, 520px); margin: 0 auto; padding: max(30px, env(safe-area-inset-top)) 0 max(36px, env(safe-area-inset-bottom)); }
+    header { text-align: center; margin-bottom: 29px; }
+    h1 { margin: 0; color: #d8bf82; font-size: clamp(1.7rem, 8vw, 2.5rem); letter-spacing: .105em; line-height: 1.12; font-weight: 600; text-shadow: 0 1px #483820, 0 3px 8px #000; }
+    header p { margin: 9px 0 0; color: #a99b7e; font: 600 .72rem/1.4 Arial, sans-serif; letter-spacing: .28em; }
+    .rule { height: 1px; margin: 23px auto 0; width: 75%; background: linear-gradient(90deg, transparent, #806945, transparent); }
+    .panel { --accent: #8e3a4a; --accent-bright: #ca6978; position: relative; margin: 0 0 19px; padding: 20px 18px 19px; border: 1px solid #6e5939; border-radius: 13px; background: linear-gradient(155deg, #27221e, #181716 62%, #141414); box-shadow: inset 0 1px #a17d4738, 0 10px 24px #0008; }
+    .panel.charlie { --accent: #326d52; --accent-bright: #73b68b; }
+    .panel::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: 12px 0 0 12px; background: linear-gradient(var(--accent-bright), var(--accent)); opacity: .8; }
+    .panel-top { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 18px; }
+    h2 { margin: 0; color: #ddc996; letter-spacing: .18em; font-size: 1.45rem; font-weight: 600; text-shadow: 0 1px #000; }
+    .score-wrap { text-align: right; min-width: 72px; }
+    .score-label { display: block; font: 600 .63rem Arial, sans-serif; letter-spacing: .2em; color: #9f957f; margin-bottom: 2px; }
+    .score { display: block; min-height: 2.7rem; color: #f0e3bd; font-size: 2.45rem; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 2px 3px #000; transition: color .2s, transform .2s; }
+    .score.loading { font-size: 1.1rem; color: #a99b7e; line-height: 2.4; }
+    .score.changed { color: #fff4cd; transform: scale(1.08); }
+    .controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+    button { min-width: 0; min-height: 55px; border: 1px solid #8a6e3f; border-radius: 8px; background: linear-gradient(#51432d, #332b22); color: #f1dfb3; font: 700 1.2rem Georgia, serif; touch-action: manipulation; cursor: pointer; box-shadow: inset 0 1px #d0ad6950, 0 3px 5px #0008; transition: transform .12s, filter .18s, border-color .18s; }
+    button:active, button.success { transform: translateY(2px); filter: brightness(1.25); }
+    button:focus-visible { outline: 2px solid #f2d48c; outline-offset: 3px; }
+    button:disabled { opacity: .48; cursor: wait; }
+    button.remove { border-color: #754d4b; background: linear-gradient(#48302f, #302425); color: #eed1c5; }
+    .charlie button.remove { border-color: #665146; }
+    .message { min-height: 1.2em; margin: 11px 1px 0; color: #d9ada1; font: .83rem/1.4 Arial, sans-serif; }
+    .message:empty { display: none; }
+    .status { margin: 17px 0 0; text-align: center; color: #ab9b79; font: .73rem/1.5 Arial, sans-serif; }
+    dialog { width: min(340px, calc(100% - 36px)); max-width: none; padding: 24px; border: 1px solid #9a7849; border-radius: 12px; background: #211d19; color: #f0e3c3; box-shadow: 0 20px 70px #000; text-align: center; }
+    dialog::backdrop { background: #000a; }
+    dialog p { margin: 0 0 21px; font-size: 1.12rem; line-height: 1.4; }
+    .dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .dialog-actions button { font-size: 1rem; }
+    .dialog-actions .cancel { background: #302d29; color: #d1c6ae; border-color: #665d4d; }
+    [hidden] { display: none !important; }
+    .access { margin: 30px 0 0; padding: 24px 20px; border: 1px solid #6e5939; border-radius: 13px; background: linear-gradient(155deg, #27221e, #171615); box-shadow: inset 0 1px #a17d4738, 0 10px 24px #0008; }
+    .access label { display: block; margin: 0 0 16px; color: #cbb98e; font: 600 .74rem Arial, sans-serif; letter-spacing: .13em; text-transform: uppercase; }
+    .access input { display: block; width: 100%; min-height: 49px; margin-top: 8px; padding: 10px 12px; border: 1px solid #746247; border-radius: 7px; background: #11110f; color: #f0e3c3; font: 1rem Arial, sans-serif; letter-spacing: normal; }
+    .access input:focus { outline: 2px solid #b49762; outline-offset: 1px; }
+    .access button { width: 100%; margin-top: 4px; letter-spacing: .13em; font-size: 1rem; }
+    .access .message { margin-top: 15px; text-align: center; }
+    .session-bar { display: flex; justify-content: flex-end; margin: -13px 0 13px; }
+    .logout { min-height: 32px; padding: 4px 9px; border-color: #66583e; background: #29241d; color: #c5b58f; font: .77rem Arial, sans-serif; box-shadow: none; }
+    @media (max-width: 365px) { main { width: calc(100% - 22px); } .panel { padding: 17px 12px; } .controls { gap: 6px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><h1>CALIX MERITORUM</h1><p id="page-subtitle">PARENT ACCESS</p><div class="rule"></div></header>
+    <section id="auth-loading" class="status">Checking parent access…</section>
+    <form id="login-form" class="access" hidden>
+      <label for="login-email">Email<input id="login-email" name="email" type="email" autocomplete="username" required></label>
+      <label for="login-password">Password<input id="login-password" name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">ENTER</button>
+      <p class="message" id="login-message" role="alert"></p>
+    </form>
+    <div id="parent-control" hidden>
+    <div class="session-bar"><button type="button" class="logout" id="logout-button">Logout</button></div>
+    <section class="panel rhea" data-child="Rhea" aria-labelledby="rhea-name">
+      <div class="panel-top"><h2 id="rhea-name">RHEA</h2><div class="score-wrap"><span class="score-label">POINTS</span><output class="score loading" id="score-Rhea" aria-live="polite">Loading…</output></div></div>
+      <div class="controls"><button type="button" class="remove" data-delta="-5" aria-label="Remove 5 points from Rhea">−5</button><button type="button" data-delta="1" aria-label="Add 1 point to Rhea">+1</button><button type="button" data-delta="5" aria-label="Add 5 points to Rhea">+5</button><button type="button" data-delta="10" aria-label="Add 10 points to Rhea">+10</button></div>
+      <p class="message" id="message-Rhea" role="status"></p>
+    </section>
+    <section class="panel charlie" data-child="Charlie" aria-labelledby="charlie-name">
+      <div class="panel-top"><h2 id="charlie-name">CHARLIE</h2><div class="score-wrap"><span class="score-label">POINTS</span><output class="score loading" id="score-Charlie" aria-live="polite">Loading…</output></div></div>
+      <div class="controls"><button type="button" class="remove" data-delta="-5" aria-label="Remove 5 points from Charlie">−5</button><button type="button" data-delta="1" aria-label="Add 1 point to Charlie">+1</button><button type="button" data-delta="5" aria-label="Add 5 points to Charlie">+5</button><button type="button" data-delta="10" aria-label="Add 10 points to Charlie">+10</button></div>
+      <p class="message" id="message-Charlie" role="status"></p>
+    </section>
+    <p class="status" id="connection-status" role="status">Loading scores…</p>
+    </div>
+  </main>
+  <dialog id="remove-dialog" aria-labelledby="remove-prompt"><p id="remove-prompt"></p><div class="dialog-actions"><button type="button" class="cancel" id="cancel-remove">Cancel</button><button type="button" id="confirm-remove">Remove 5</button></div></dialog>
+  <script>
+    const SUPABASE_URL = "https://mcalssjfmdfstmzkrmbc.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_6TTGufhLGJ5r1Lh81mcK3A_oVDN28uD";
+    const CHILDREN = ["Rhea", "Charlie"];
+    const API = `${SUPABASE_URL}/rest/v1/game_state`;
+    const AUTH = `${SUPABASE_URL}/auth/v1`;
+    const SESSION_KEY = "calix-meritorum-parent-session";
+    const state = Object.fromEntries(CHILDREN.map(child => [child, { row: null, busy: false, lastWrittenAt: null }]));
+    const dialog = document.getElementById("remove-dialog");
+    const connectionStatus = document.getElementById("connection-status");
+    const loginForm = document.getElementById("login-form");
+    let authSession = null;
+    let refreshPromise = null;
+    let tokenRefreshAttempted = false;
+    let pendingRemoval = null;
+
+    function saveSession(data) {
+      if (!data?.access_token || !data?.refresh_token || !Number.isFinite(data.expires_in)) throw new Error("Invalid session");
+      authSession = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_at: Date.now() + data.expires_in * 1000
+      };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(authSession));
+    }
+    function clearSession() {
+      authSession = null;
+      localStorage.removeItem(SESSION_KEY);
+    }
+    function requireAuthorizedResponse(response) {
+      if (response.status === 401) {
+        clearSession();
+        showAccess();
+        throw new Error("Parent session is no longer valid");
+      }
+      return response;
+    }
+    async function authRequest(path, body, token) {
+      const response = await fetch(`${AUTH}${path}`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) throw new Error(`Authentication failed: ${response.status}`);
+      return response.json();
+    }
+    async function refreshSession() {
+      if (!authSession?.refresh_token) throw new Error("No parent session");
+      tokenRefreshAttempted = true;
+      if (!refreshPromise) {
+        refreshPromise = authRequest("/token?grant_type=refresh_token", { refresh_token: authSession.refresh_token })
+          .then(saveSession)
+          .catch(error => { clearSession(); showAccess(); throw error; })
+          .finally(() => { refreshPromise = null; });
+      }
+      await refreshPromise;
+    }
+    async function ensureActiveSession() {
+      if (!authSession) throw new Error("Parent login required");
+      if (authSession.expires_at - Date.now() < 60000) await refreshSession();
+      if (!authSession) throw new Error("Parent login required");
+      return authSession.access_token;
+    }
+    function showAccess() {
+      document.getElementById("auth-loading").hidden = true;
+      document.getElementById("parent-control").hidden = true;
+      loginForm.hidden = false;
+      document.getElementById("page-subtitle").textContent = "PARENT ACCESS";
+      if (dialog.open) dialog.close();
+      if (socket) { const old = socket; socket = null; old.close(); }
+      clearInterval(heartbeat);
+    }
+    async function showControl() {
+      await ensureActiveSession();
+      document.getElementById("auth-loading").hidden = true;
+      loginForm.hidden = true;
+      document.getElementById("parent-control").hidden = false;
+      document.getElementById("page-subtitle").textContent = "PARENT CONTROL";
+      try { await refreshScores(); }
+      catch (error) {
+        console.error(error);
+        connectionStatus.textContent = "Couldn't load scores. Check connection and refresh.";
+      }
+      if (authSession && !socket) connectRealtime();
+    }
+    loginForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = loginForm.querySelector("button");
+      const feedback = document.getElementById("login-message");
+      button.disabled = true;
+      feedback.textContent = "";
+      try {
+        const data = await authRequest("/token?grant_type=password", {
+          email: document.getElementById("login-email").value.trim(),
+          password: document.getElementById("login-password").value
+        });
+        saveSession(data);
+        document.getElementById("login-password").value = "";
+        await showControl();
+      } catch (error) {
+        console.error(error);
+        feedback.textContent = "Couldn't sign in. Check your email and password.";
+      } finally { button.disabled = false; }
+    });
+    document.getElementById("logout-button").addEventListener("click", async () => {
+      const token = authSession?.access_token;
+      clearSession();
+      for (const child of CHILDREN) { state[child].row = null; message(child, ""); }
+      showAccess();
+      if (token) {
+        try { await fetch(`${AUTH}/logout`, { method: "POST", headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` } }); }
+        catch (error) { console.warn("Remote logout unavailable", error); }
+      }
+    });
+
+    function validRow(row) {
+      return row && CHILDREN.includes(row.child) && Number.isInteger(row.points) && row.points >= 0;
+    }
+    function setBusy(child, busy) {
+      state[child].busy = busy;
+      document.querySelectorAll(`[data-child="${child}"] button`).forEach(button => button.disabled = busy || !state[child].row || !authSession);
+    }
+    function showRow(row, feedback = false) {
+      if (!validRow(row)) return;
+      const child = row.child;
+      state[child].row = row;
+      const score = document.getElementById(`score-${child}`);
+      const changed = score.textContent !== String(row.points) && !score.classList.contains("loading");
+      score.textContent = row.points;
+      score.classList.remove("loading");
+      if (feedback && changed) {
+        score.classList.remove("changed");
+        void score.offsetWidth;
+        score.classList.add("changed");
+        setTimeout(() => score.classList.remove("changed"), 250);
+      }
+      setBusy(child, state[child].busy);
+    }
+    function message(child, text) { document.getElementById(`message-${child}`).textContent = text; }
+    function headers(token, extra = {}) { return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, ...extra }; }
+    async function readRow(child) {
+      const token = await ensureActiveSession();
+      const response = requireAuthorizedResponse(await fetch(`${API}?select=child,points,updated_at&child=eq.${child}`, { headers: headers(token) }));
+      if (!response.ok) throw new Error(`Read failed: ${response.status}`);
+      const rows = await response.json();
+      if (rows.length !== 1 || !validRow(rows[0])) throw new Error(`Invalid ${child} score`);
+      return rows[0];
+    }
+    async function refreshScores() {
+      let status = null;
+      let responseBody = null;
+      try {
+        const token = await ensureActiveSession();
+        const response = await fetch(`${API}?select=child,points,updated_at&child=in.(Rhea,Charlie)`, { headers: headers(token) });
+        status = response.status;
+        responseBody = await response.text();
+        requireAuthorizedResponse(response);
+        if (!response.ok) throw new Error(`Score load failed: ${response.status}`);
+        const rows = JSON.parse(responseBody);
+        for (const child of CHILDREN) {
+          const row = rows.find(item => item.child === child);
+          if (!validRow(row)) throw new Error(`Missing ${child} score`);
+          showRow(row);
+        }
+        connectionStatus.textContent = "Scores are up to date";
+      } catch (error) {
+        console.error("Score load diagnostics", {
+          status,
+          responseBody,
+          hasAuthenticatedSession: !!authSession,
+          hasAccessToken: !!authSession?.access_token,
+          tokenRefreshAttempted,
+          error: error.message
+        });
+        throw error;
+      }
+    }
+    async function changeScore(child, delta, button) {
+      if (state[child].busy || !state[child].row || !authSession) return;
+      setBusy(child, true);
+      message(child, "");
+      try {
+        let updated = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const current = await readRow(child);
+          showRow(current);
+          const next = Math.max(0, current.points + delta);
+          if (next === current.points) { updated = current; break; }
+          // A conditional PATCH prevents a stale phone read from replacing a newer row.
+          const query = new URLSearchParams({
+            child: `eq.${child}`,
+            points: `eq.${current.points}`,
+            updated_at: current.updated_at ? `eq.${current.updated_at}` : "is.null",
+            select: "child,points,updated_at"
+          });
+          const timestamp = new Date().toISOString();
+          const token = await ensureActiveSession();
+          const response = requireAuthorizedResponse(await fetch(`${API}?${query}`, {
+            method: "PATCH",
+            headers: headers(token, { "Content-Type": "application/json", Prefer: "return=representation" }),
+            body: JSON.stringify({ points: next, updated_at: timestamp })
+          }));
+          if (!response.ok) throw new Error(`Update failed: ${response.status}`);
+          const rows = await response.json();
+          if (rows.length === 1) {
+            state[child].lastWrittenAt = rows[0].updated_at;
+            updated = rows[0];
+            break;
+          }
+          if (rows.length !== 0) throw new Error("Unexpected update response");
+        }
+        if (!updated) throw new Error("Score changed too often to update safely");
+        showRow(updated, true);
+        button.classList.add("success");
+        setTimeout(() => button.classList.remove("success"), 250);
+        // Read back the authoritative row, including any later concurrent update.
+        showRow(await readRow(child), true);
+      } catch (error) {
+        console.error(error);
+        message(child, "Couldn't update score. Try again.");
+        try { showRow(await readRow(child)); } catch (_) {}
+      } finally {
+        setBusy(child, false);
+      }
+    }
+
+    document.querySelectorAll(".panel .controls button").forEach(button => {
+      button.addEventListener("click", () => {
+        const child = button.closest(".panel").dataset.child;
+        const delta = Number(button.dataset.delta);
+        if (delta < 0) {
+          pendingRemoval = { child, button };
+          document.getElementById("remove-prompt").textContent = `Remove 5 points from ${child}?`;
+          dialog.showModal();
+        } else changeScore(child, delta, button);
+      });
+    });
+    document.getElementById("cancel-remove").addEventListener("click", () => dialog.close());
+    document.getElementById("confirm-remove").addEventListener("click", () => {
+      const action = pendingRemoval;
+      dialog.close();
+      if (action) changeScore(action.child, -5, action.button);
+    });
+    dialog.addEventListener("close", () => { pendingRemoval = null; });
+
+    let socket = null;
+    let heartbeat = null;
+    let retryDelay = 1000;
+    let reference = 0;
+    function connectRealtime() {
+      socket = new WebSocket(`${SUPABASE_URL.replace(/^http/, "ws")}/realtime/v1/websocket?apikey=${encodeURIComponent(SUPABASE_KEY)}`);
+      const currentSocket = socket;
+      currentSocket.onopen = () => {
+        retryDelay = 1000;
+        currentSocket.send(JSON.stringify({
+          topic: "realtime:parent-control", event: "phx_join", join_ref: "1", ref: String(++reference),
+          payload: { config: { postgres_changes: [{ event: "UPDATE", schema: "public", table: "game_state" }], private: false } }
+        }));
+        heartbeat = setInterval(() => {
+          if (currentSocket.readyState === WebSocket.OPEN) currentSocket.send(JSON.stringify({
+            topic: "phoenix", event: "heartbeat", payload: {}, ref: String(++reference), join_ref: null
+          }));
+        }, 20000);
+      };
+      currentSocket.onmessage = event => {
+        const messageData = JSON.parse(event.data);
+        if (messageData.event === "postgres_changes" && messageData.payload?.data?.type === "UPDATE") {
+          const row = messageData.payload.data.record;
+          if (validRow(row)) {
+            if (row.updated_at !== state[row.child].lastWrittenAt) showRow(row, true);
+            else state[row.child].lastWrittenAt = null;
+          }
+        } else if (messageData.event === "phx_reply" && messageData.payload?.status === "ok" && messageData.topic === "realtime:parent-control") {
+          refreshScores().catch(error => console.error(error));
+        }
+      };
+      currentSocket.onerror = () => currentSocket.close();
+      currentSocket.onclose = () => {
+        clearInterval(heartbeat);
+        if (socket === currentSocket) {
+          setTimeout(connectRealtime, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 30000);
+        }
+      };
+    }
+    (async () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+        if (!stored?.access_token || !stored?.refresh_token || !Number.isFinite(stored.expires_at)) throw new Error("No saved session");
+        authSession = stored;
+        const token = await ensureActiveSession();
+        const response = await fetch(`${AUTH}/user`, { headers: headers(token) });
+        if (!response.ok) throw new Error("Saved session is invalid");
+        await showControl();
+      } catch (error) {
+        clearSession();
+        showAccess();
+      }
+    })();
+  </script>
+</body>
+</html>
