@@ -49,6 +49,7 @@
     .access input { display: block; width: 100%; min-height: 49px; margin-top: 8px; padding: 10px 12px; border: 1px solid #746247; border-radius: 7px; background: #11110f; color: #f0e3c3; font: 1rem Arial, sans-serif; letter-spacing: normal; }
     .access input:focus { outline: 2px solid #b49762; outline-offset: 1px; }
     .access button { width: 100%; margin-top: 4px; letter-spacing: .13em; font-size: 1rem; }
+    .access .forgot-password { display: block; width: auto; min-height: 32px; margin: 9px auto 0; padding: 3px 5px; border: 0; background: none; box-shadow: none; color: #bdaa81; font: .82rem Arial, sans-serif; letter-spacing: .02em; text-decoration: underline; text-underline-offset: 3px; }
     .access .message { margin-top: 15px; text-align: center; }
     .session-bar { display: flex; justify-content: flex-end; margin: -13px 0 13px; }
     .logout { min-height: 32px; padding: 4px 9px; border-color: #66583e; background: #29241d; color: #c5b58f; font: .77rem Arial, sans-serif; box-shadow: none; }
@@ -63,6 +64,7 @@
       <label for="login-email">Email<input id="login-email" name="email" type="email" autocomplete="username" required></label>
       <label for="login-password">Password<input id="login-password" name="password" type="password" autocomplete="current-password" required></label>
       <button type="submit">ENTER</button>
+      <button type="button" class="forgot-password" id="forgot-password">Forgot password?</button>
       <p class="message" id="login-message" role="alert"></p>
     </form>
     <form id="recovery-form" class="access" hidden>
@@ -102,6 +104,7 @@
     const CHILDREN = ["Rhea", "Charlie"];
     const API = `${SUPABASE_URL}/rest/v1/game_state`;
     const AUTH = `${SUPABASE_URL}/auth/v1`;
+    const RECOVERY_REDIRECT_URL = "https://stephenjadam.github.io/Calix-Meritorum/Parent.html";
     const SESSION_KEY = "calix-meritorum-parent-session";
     const RECOVERY_KEY = "calix-meritorum-recovery-pending";
     const state = Object.fromEntries(CHILDREN.map(child => [child, { row: null, busy: false, lastWrittenAt: null }]));
@@ -116,6 +119,7 @@
     let tokenRefreshAttempted = false;
     let pendingRemoval = null;
     let pendingReset = null;
+    let recoveryRequestPending = false;
 
     function saveSession(data) {
       if (!data?.access_token || !data?.refresh_token || !Number.isFinite(data.expires_in)) throw new Error("Invalid session");
@@ -214,6 +218,33 @@
         console.error(error);
         feedback.textContent = "Couldn't sign in. Check your email and password.";
       } finally { button.disabled = false; }
+    });
+    document.getElementById("forgot-password").addEventListener("click", async () => {
+      if (recoveryRequestPending) return;
+      const emailInput = document.getElementById("login-email");
+      const feedback = document.getElementById("login-message");
+      const email = emailInput.value.trim();
+      if (!email) { feedback.textContent = "Enter your email address first."; emailInput.focus(); return; }
+      if (!emailInput.checkValidity()) { feedback.textContent = "Enter a valid email address."; emailInput.focus(); return; }
+      const button = document.getElementById("forgot-password");
+      recoveryRequestPending = true;
+      button.disabled = true;
+      feedback.textContent = "Requesting a reset link…";
+      try {
+        const response = await fetch(`${AUTH}/recover?redirect_to=${encodeURIComponent(RECOVERY_REDIRECT_URL)}`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+        // Do not distinguish account-specific responses from a successful request.
+        if (!response.ok && response.status !== 400 && response.status !== 404) throw new Error("Recovery request failed");
+        feedback.textContent = "If an account exists for that email, a password reset link has been sent.";
+      } catch (_) {
+        feedback.textContent = "Couldn't request a reset link right now. Check your connection and try again.";
+      } finally {
+        recoveryRequestPending = false;
+        button.disabled = false;
+      }
     });
     function showRecovery() {
       document.getElementById("auth-loading").hidden = true;
