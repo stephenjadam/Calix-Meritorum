@@ -2005,6 +2005,8 @@ function cancelGemImpactSound(crystal) {
 const SUPABASE_URL = "https://mcalssjfmdfstmzkrmbc.supabase.co";
 const SUPABASE_KEY = "sb_publishable_6TTGufhLGJ5r1Lh81mcK3A_oVDN28uD";
 const scoreRows = { rhea: "Rhea", charlie: "Charlie" };
+const lastResetIds = { rhea: null, charlie: null };
+const lastRemoteTimestamps = { rhea: 0, charlie: 0 };
 const scoreSaves = {
     rhea: { desired: null, active: false, lastTimestamp: 0, ownTimestamps: [] },
     charlie: { desired: null, active: false, lastTimestamp: 0, ownTimestamps: [] }
@@ -2116,6 +2118,28 @@ function changePoints(child, amount, source = "local") {
         processPointQueue(child);
     }
     if (source === "local") saveScore(child);
+}
+
+function applyDailyReset(child, resetId, currentScore) {
+    lastResetIds[child] = resetId;
+    const queue = pointQueues[child];
+    queue.generation++;
+    queue.pending = 0;
+    queue.launched = currentScore;
+    queue.landed = currentScore;
+    clearTimeout(queue.timer);
+    clearTimeout(queue.removalTimer);
+    queue.timer = null;
+    queue.removalTimer = null;
+    const glass = document.getElementById(child + "Glass");
+    glass.querySelectorAll(".falling-crystal").forEach(crystal => {
+        cancelGemImpactSound(crystal);
+        crystal.remove();
+    });
+    glass.querySelectorAll(".shatter-fragment").forEach(fragment => fragment.remove());
+    landedSpriteVariants[child].clear();
+    points[child] = currentScore;
+    updateDisplay(child, currentScore);
 }
 
 function triggerLightning(child) {
@@ -2534,7 +2558,7 @@ setTimeout(() => {
 
 async function fetchScores(signal) {
     const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/game_state?select=child,points,updated_at&child=in.(Rhea,Charlie)`,
+        `${SUPABASE_URL}/rest/v1/game_state?select=*&child=in.(Rhea,Charlie)`,
         { headers: { apikey: SUPABASE_KEY }, signal }
     );
     if (!response.ok) throw new Error(`Score load failed (${response.status})`);
@@ -2551,6 +2575,13 @@ function applyRemoteScore(row) {
 
     const timestamp = Date.parse(row.updated_at);
     if (scoreSaves[child].ownTimestamps.includes(timestamp)) return;
+    if (timestamp < lastRemoteTimestamps[child]) return;
+    lastRemoteTimestamps[child] = timestamp;
+    const resetId = row.reset_id ?? null;
+    if (resetId !== lastResetIds[child]) {
+        applyDailyReset(child, resetId, row.points);
+        return;
+    }
     const difference = row.points - points[child];
     if (difference !== 0) {
         tracePointsCupAudio("REMOTE SCORE CHANGE RECEIVED", child);
@@ -2664,6 +2695,8 @@ fetchScores(startupFetch.signal).then(rows => {
         const row = rows.find(item => item.child === scoreRows[child]);
         if (!validScore(row)) throw new Error(`Missing or invalid ${scoreRows[child]} score`);
         points[child] = row.points;
+        lastResetIds[child] = row.reset_id ?? null;
+        lastRemoteTimestamps[child] = Date.parse(row.updated_at) || 0;
         pointQueues[child].launched = row.points;
         pointQueues[child].landed = row.points;
         updateDisplay(child, row.points);

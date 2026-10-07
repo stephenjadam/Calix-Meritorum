@@ -31,6 +31,9 @@
     button:disabled { opacity: .48; cursor: wait; }
     button.remove { border-color: #754d4b; background: linear-gradient(#48302f, #302425); color: #eed1c5; }
     .charlie button.remove { border-color: #665146; }
+    .reset-controls { display: flex; justify-content: flex-end; margin-top: 13px; }
+    .reset-controls button, .reset-both { min-height: 34px; padding: 5px 11px; border-color: #6b5b42; background: linear-gradient(#342e25, #24211d); color: #c9b892; font: 600 .73rem Arial, sans-serif; letter-spacing: .1em; box-shadow: inset 0 1px #b3915330; }
+    .new-day { text-align: center; margin: 8px 0 0; }
     .message { min-height: 1.2em; margin: 11px 1px 0; color: #d9ada1; font: .83rem/1.4 Arial, sans-serif; }
     .message:empty { display: none; }
     .status { margin: 17px 0 0; text-align: center; color: #ab9b79; font: .73rem/1.5 Arial, sans-serif; }
@@ -67,17 +70,21 @@
     <section class="panel rhea" data-child="Rhea" aria-labelledby="rhea-name">
       <div class="panel-top"><h2 id="rhea-name">RHEA</h2><div class="score-wrap"><span class="score-label">POINTS</span><output class="score loading" id="score-Rhea" aria-live="polite">Loading…</output></div></div>
       <div class="controls"><button type="button" class="remove" data-delta="-5" aria-label="Remove 5 points from Rhea">−5</button><button type="button" data-delta="1" aria-label="Add 1 point to Rhea">+1</button><button type="button" data-delta="5" aria-label="Add 5 points to Rhea">+5</button><button type="button" data-delta="10" aria-label="Add 10 points to Rhea">+10</button></div>
+      <div class="reset-controls"><button type="button" class="reset-one" data-reset="Rhea" disabled>RESET RHEA</button></div>
       <p class="message" id="message-Rhea" role="status"></p>
     </section>
     <section class="panel charlie" data-child="Charlie" aria-labelledby="charlie-name">
       <div class="panel-top"><h2 id="charlie-name">CHARLIE</h2><div class="score-wrap"><span class="score-label">POINTS</span><output class="score loading" id="score-Charlie" aria-live="polite">Loading…</output></div></div>
       <div class="controls"><button type="button" class="remove" data-delta="-5" aria-label="Remove 5 points from Charlie">−5</button><button type="button" data-delta="1" aria-label="Add 1 point to Charlie">+1</button><button type="button" data-delta="5" aria-label="Add 5 points to Charlie">+5</button><button type="button" data-delta="10" aria-label="Add 10 points to Charlie">+10</button></div>
+      <div class="reset-controls"><button type="button" class="reset-one" data-reset="Charlie" disabled>RESET CHARLIE</button></div>
       <p class="message" id="message-Charlie" role="status"></p>
     </section>
+    <div class="new-day"><button type="button" class="reset-both" id="reset-both" disabled>RESET BOTH · NEW DAY</button></div>
     <p class="status" id="connection-status" role="status">Loading scores…</p>
     </div>
   </main>
   <dialog id="remove-dialog" aria-labelledby="remove-prompt"><p id="remove-prompt"></p><div class="dialog-actions"><button type="button" class="cancel" id="cancel-remove">Cancel</button><button type="button" id="confirm-remove">Remove 5</button></div></dialog>
+  <dialog id="reset-dialog" aria-labelledby="reset-prompt"><p id="reset-prompt"></p><div class="dialog-actions"><button type="button" class="cancel" id="cancel-reset">Cancel</button><button type="button" id="confirm-reset">Reset</button></div></dialog>
   <script>
     const SUPABASE_URL = "https://mcalssjfmdfstmzkrmbc.supabase.co";
     const SUPABASE_KEY = "sb_publishable_6TTGufhLGJ5r1Lh81mcK3A_oVDN28uD";
@@ -87,12 +94,14 @@
     const SESSION_KEY = "calix-meritorum-parent-session";
     const state = Object.fromEntries(CHILDREN.map(child => [child, { row: null, busy: false, lastWrittenAt: null }]));
     const dialog = document.getElementById("remove-dialog");
+    const resetDialog = document.getElementById("reset-dialog");
     const connectionStatus = document.getElementById("connection-status");
     const loginForm = document.getElementById("login-form");
     let authSession = null;
     let refreshPromise = null;
     let tokenRefreshAttempted = false;
     let pendingRemoval = null;
+    let pendingReset = null;
 
     function saveSession(data) {
       if (!data?.access_token || !data?.refresh_token || !Number.isFinite(data.expires_in)) throw new Error("Invalid session");
@@ -151,6 +160,8 @@
       loginForm.hidden = false;
       document.getElementById("page-subtitle").textContent = "PARENT ACCESS";
       if (dialog.open) dialog.close();
+      if (resetDialog.open) resetDialog.close();
+      updateResetAvailability();
       if (socket) { const old = socket; socket = null; old.close(); }
       clearInterval(heartbeat);
     }
@@ -203,6 +214,15 @@
     function setBusy(child, busy) {
       state[child].busy = busy;
       document.querySelectorAll(`[data-child="${child}"] button`).forEach(button => button.disabled = busy || !state[child].row || !authSession);
+      updateResetAvailability();
+    }
+    function updateResetAvailability() {
+      for (const child of CHILDREN) {
+        const available = !!authSession && !!state[child].row && Object.hasOwn(state[child].row, "reset_id") && !state[child].busy;
+        document.querySelector(`[data-reset="${child}"]`).disabled = !available;
+      }
+      document.getElementById("reset-both").disabled = CHILDREN.some(child =>
+        !authSession || !state[child].row || !Object.hasOwn(state[child].row, "reset_id") || state[child].busy);
     }
     function showRow(row, feedback = false) {
       if (!validRow(row)) return;
@@ -224,7 +244,7 @@
     function headers(token, extra = {}) { return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, ...extra }; }
     async function readRow(child) {
       const token = await ensureActiveSession();
-      const response = requireAuthorizedResponse(await fetch(`${API}?select=child,points,updated_at&child=eq.${child}`, { headers: headers(token) }));
+      const response = requireAuthorizedResponse(await fetch(`${API}?select=*&child=eq.${child}`, { headers: headers(token) }));
       if (!response.ok) throw new Error(`Read failed: ${response.status}`);
       const rows = await response.json();
       if (rows.length !== 1 || !validRow(rows[0])) throw new Error(`Invalid ${child} score`);
@@ -235,7 +255,7 @@
       let responseBody = null;
       try {
         const token = await ensureActiveSession();
-        const response = await fetch(`${API}?select=child,points,updated_at&child=in.(Rhea,Charlie)`, { headers: headers(token) });
+        const response = await fetch(`${API}?select=*&child=in.(Rhea,Charlie)`, { headers: headers(token) });
         status = response.status;
         responseBody = await response.text();
         requireAuthorizedResponse(response);
@@ -308,6 +328,57 @@
       }
     }
 
+    async function writeReset(child) {
+      const resetId = crypto.randomUUID();
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const current = await readRow(child);
+        if (!Object.hasOwn(current, "reset_id")) throw new Error("Daily reset database field is not installed");
+        showRow(current);
+        // The new ID is the explicit reset signal, including when points are already zero.
+        const query = new URLSearchParams({
+          child: `eq.${child}`,
+          points: `eq.${current.points}`,
+          updated_at: current.updated_at ? `eq.${current.updated_at}` : "is.null",
+          select: "*"
+        });
+        const token = await ensureActiveSession();
+        const response = requireAuthorizedResponse(await fetch(`${API}?${query}`, {
+          method: "PATCH",
+          headers: headers(token, { "Content-Type": "application/json", Prefer: "return=representation" }),
+          body: JSON.stringify({ points: 0, updated_at: new Date().toISOString(), reset_id: resetId })
+        }));
+        if (!response.ok) throw new Error(`Reset failed: ${response.status}`);
+        const rows = await response.json();
+        if (rows.length === 1) {
+          state[child].lastWrittenAt = rows[0].updated_at;
+          showRow(rows[0], true);
+          showRow(await readRow(child), true);
+          return;
+        }
+        if (rows.length !== 0) throw new Error("Unexpected reset response");
+      }
+      throw new Error("Score changed too often to reset safely");
+    }
+
+    async function resetScores(children) {
+      if (!authSession || children.some(child => state[child].busy || !state[child].row ||
+          !Object.hasOwn(state[child].row, "reset_id"))) return;
+      children.forEach(child => { setBusy(child, true); message(child, ""); });
+      const results = await Promise.allSettled(children.map(writeReset));
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.error(result.reason);
+          message(children[index], "Couldn't reset. Try again.");
+        }
+      });
+      if (results.some(result => result.status === "rejected")) {
+        connectionStatus.textContent = children.length === 2
+          ? "One or both resets failed. Check both scores before retrying."
+          : "Reset failed. Check the score and try again.";
+      } else connectionStatus.textContent = "Scores are up to date";
+      children.forEach(child => setBusy(child, false));
+    }
+
     document.querySelectorAll(".panel .controls button").forEach(button => {
       button.addEventListener("click", () => {
         const child = button.closest(".panel").dataset.child;
@@ -326,6 +397,24 @@
       if (action) changeScore(action.child, -5, action.button);
     });
     dialog.addEventListener("close", () => { pendingRemoval = null; });
+
+    document.querySelectorAll("[data-reset]").forEach(button => button.addEventListener("click", () => {
+      pendingReset = [button.dataset.reset];
+      document.getElementById("reset-prompt").textContent = `Reset ${button.dataset.reset} to 0?`;
+      resetDialog.showModal();
+    }));
+    document.getElementById("reset-both").addEventListener("click", () => {
+      pendingReset = [...CHILDREN];
+      document.getElementById("reset-prompt").textContent = "Reset both hourglasses to 0 for a new day?";
+      resetDialog.showModal();
+    });
+    document.getElementById("cancel-reset").addEventListener("click", () => resetDialog.close());
+    document.getElementById("confirm-reset").addEventListener("click", () => {
+      const children = pendingReset;
+      resetDialog.close();
+      if (children) resetScores(children);
+    });
+    resetDialog.addEventListener("close", () => { pendingReset = null; });
 
     let socket = null;
     let heartbeat = null;
