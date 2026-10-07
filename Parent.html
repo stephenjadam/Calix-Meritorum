@@ -65,6 +65,17 @@
       <button type="submit">ENTER</button>
       <p class="message" id="login-message" role="alert"></p>
     </form>
+    <form id="recovery-form" class="access" hidden>
+      <label for="new-password">New password<input id="new-password" name="new-password" type="password" autocomplete="new-password" minlength="6" required></label>
+      <label for="confirm-password">Confirm new password<input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="6" required></label>
+      <button type="submit">SET PASSWORD</button>
+      <p class="message" id="recovery-message" role="alert"></p>
+      <button type="button" class="logout" id="cancel-recovery">Return to sign in</button>
+    </form>
+    <div id="recovery-error" class="access" hidden>
+      <p class="message" id="recovery-error-message" role="alert"></p>
+      <button type="button" class="logout" id="recovery-sign-in">Return to sign in</button>
+    </div>
     <div id="parent-control" hidden>
     <div class="session-bar"><button type="button" class="logout" id="logout-button">Logout</button></div>
     <section class="panel rhea" data-child="Rhea" aria-labelledby="rhea-name">
@@ -92,11 +103,14 @@
     const API = `${SUPABASE_URL}/rest/v1/game_state`;
     const AUTH = `${SUPABASE_URL}/auth/v1`;
     const SESSION_KEY = "calix-meritorum-parent-session";
+    const RECOVERY_KEY = "calix-meritorum-recovery-pending";
     const state = Object.fromEntries(CHILDREN.map(child => [child, { row: null, busy: false, lastWrittenAt: null }]));
     const dialog = document.getElementById("remove-dialog");
     const resetDialog = document.getElementById("reset-dialog");
     const connectionStatus = document.getElementById("connection-status");
     const loginForm = document.getElementById("login-form");
+    const recoveryForm = document.getElementById("recovery-form");
+    const recoveryError = document.getElementById("recovery-error");
     let authSession = null;
     let refreshPromise = null;
     let tokenRefreshAttempted = false;
@@ -157,6 +171,8 @@
     function showAccess() {
       document.getElementById("auth-loading").hidden = true;
       document.getElementById("parent-control").hidden = true;
+      recoveryForm.hidden = true;
+      recoveryError.hidden = true;
       loginForm.hidden = false;
       document.getElementById("page-subtitle").textContent = "PARENT ACCESS";
       if (dialog.open) dialog.close();
@@ -169,6 +185,8 @@
       await ensureActiveSession();
       document.getElementById("auth-loading").hidden = true;
       loginForm.hidden = true;
+      recoveryForm.hidden = true;
+      recoveryError.hidden = true;
       document.getElementById("parent-control").hidden = false;
       document.getElementById("page-subtitle").textContent = "PARENT CONTROL";
       try { await refreshScores(); }
@@ -197,8 +215,71 @@
         feedback.textContent = "Couldn't sign in. Check your email and password.";
       } finally { button.disabled = false; }
     });
+    function showRecovery() {
+      document.getElementById("auth-loading").hidden = true;
+      document.getElementById("parent-control").hidden = true;
+      loginForm.hidden = true;
+      recoveryError.hidden = true;
+      recoveryForm.hidden = false;
+      document.getElementById("page-subtitle").textContent = "SET NEW PASSWORD";
+    }
+    function showRecoveryError(text) {
+      document.getElementById("auth-loading").hidden = true;
+      document.getElementById("parent-control").hidden = true;
+      loginForm.hidden = true;
+      recoveryForm.hidden = true;
+      recoveryError.hidden = false;
+      document.getElementById("page-subtitle").textContent = "PASSWORD RECOVERY";
+      document.getElementById("recovery-error-message").textContent = text;
+    }
+    function cleanRecoveryUrl() {
+      try { history.replaceState(null, "", location.pathname); } catch (_) {}
+    }
+    function returnToSignIn() {
+      localStorage.removeItem(RECOVERY_KEY);
+      clearSession();
+      recoveryForm.reset();
+      showAccess();
+    }
+    document.getElementById("cancel-recovery").addEventListener("click", returnToSignIn);
+    document.getElementById("recovery-sign-in").addEventListener("click", returnToSignIn);
+    recoveryForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      const password = document.getElementById("new-password").value;
+      const confirmation = document.getElementById("confirm-password").value;
+      const feedback = document.getElementById("recovery-message");
+      feedback.textContent = "";
+      if (!password || !confirmation) { feedback.textContent = "Enter and confirm a new password."; return; }
+      if (password.length < 6) { feedback.textContent = "Use at least 6 characters."; return; }
+      if (password !== confirmation) { feedback.textContent = "Passwords do not match."; return; }
+      const button = recoveryForm.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        const token = await ensureActiveSession();
+        const response = await fetch(`${AUTH}/user`, {
+          method: "PUT",
+          headers: headers(token, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ password })
+        });
+        if (response.status === 401 || response.status === 403) {
+          localStorage.removeItem(RECOVERY_KEY);
+          clearSession();
+          showRecoveryError("This recovery session has expired. Request a new password reset link.");
+          return;
+        }
+        if (!response.ok) throw new Error("Password update rejected");
+        localStorage.removeItem(RECOVERY_KEY);
+        recoveryForm.reset();
+        await showControl();
+        connectionStatus.textContent = "Password updated. Parent Control is ready.";
+      } catch (_) {
+        if (!authSession) showRecoveryError("This recovery session has expired. Request a new password reset link.");
+        else if (!recoveryForm.hidden) feedback.textContent = "Couldn't set the password. Check its requirements and try again.";
+      } finally { button.disabled = false; }
+    });
     document.getElementById("logout-button").addEventListener("click", async () => {
       const token = authSession?.access_token;
+      localStorage.removeItem(RECOVERY_KEY);
       clearSession();
       for (const child of CHILDREN) { state[child].row = null; message(child, ""); }
       showAccess();
@@ -457,6 +538,43 @@
       };
     }
     (async () => {
+      const fragment = new URLSearchParams(location.hash.slice(1));
+      const query = new URLSearchParams(location.search);
+      const recoveryVisit = fragment.get("type") === "recovery" || query.get("type") === "recovery" ||
+        !!fragment.get("error_code") || !!query.get("error_code");
+      if (recoveryVisit) {
+        const accessToken = fragment.get("access_token");
+        const refreshToken = fragment.get("refresh_token");
+        const tokenHash = query.get("token_hash") || fragment.get("token_hash");
+        const linkError = fragment.get("error_code") || query.get("error_code") || fragment.get("error") || query.get("error");
+        cleanRecoveryUrl();
+        clearSession(); // Never substitute an older saved login for a recovery link.
+        if (linkError) {
+          showRecoveryError("This recovery link is invalid or has expired. Request a new password reset link.");
+          return;
+        }
+        try {
+          let session;
+          if (accessToken && refreshToken) {
+            session = { access_token: accessToken, refresh_token: refreshToken,
+              expires_in: Number(fragment.get("expires_in")) ||
+                Math.max(1, Number(fragment.get("expires_at")) - Math.floor(Date.now() / 1000)) };
+          } else if (tokenHash) {
+            session = await authRequest("/verify", { type: "recovery", token_hash: tokenHash });
+          } else throw new Error("Missing recovery credentials");
+          const response = await fetch(`${AUTH}/user`, {
+            headers: headers(session.access_token)
+          });
+          if (!response.ok) throw new Error("Invalid recovery session");
+          saveSession(session);
+          localStorage.setItem(RECOVERY_KEY, "1");
+          showRecovery();
+        } catch (_) {
+          clearSession();
+          showRecoveryError("This recovery link is invalid or has expired. Request a new password reset link.");
+        }
+        return;
+      }
       try {
         const stored = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
         if (!stored?.access_token || !stored?.refresh_token || !Number.isFinite(stored.expires_at)) throw new Error("No saved session");
@@ -464,8 +582,10 @@
         const token = await ensureActiveSession();
         const response = await fetch(`${AUTH}/user`, { headers: headers(token) });
         if (!response.ok) throw new Error("Saved session is invalid");
-        await showControl();
+        if (localStorage.getItem(RECOVERY_KEY)) showRecovery();
+        else await showControl();
       } catch (error) {
+        localStorage.removeItem(RECOVERY_KEY);
         clearSession();
         showAccess();
       }
